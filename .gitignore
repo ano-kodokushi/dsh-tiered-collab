@@ -1,0 +1,14 @@
+# 运行期落盘：不进库
+state/
+
+# 编辑器的备份文件
+*.bak
+*.bak-*
+*.orig
+
+# 操作系统噪声
+.DS_Store
+Thumbs.db
+
+# 临时探针
+*.tmp

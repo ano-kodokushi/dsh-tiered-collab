@@ -1,0 +1,2 @@
+name: 分层协作模式
+description: 把三档模型路由钉死在工具上：plan_t0（pro 思考，只拆不写）/ work_t1（flash 思考，单点逻辑）/ work_t2（flash 非思考，机械粗活）/ verify_t1（flash 思考，只看不改，先硬后软）。含 TaskCard 协议 skill、workflow 多卡编排与计划模式。

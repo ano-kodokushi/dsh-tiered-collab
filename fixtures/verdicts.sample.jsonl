@@ -1,0 +1,10 @@
+{"task_id":"T-101","kind":"work","difficulty":"L0","tier":"T2","verdict":"pass"}
+{"task_id":"T-102","kind":"work","difficulty":"L0","tier":"T2","verdict":"pass"}
+{"task_id":"T-103","kind":"work","difficulty":"L0","tier":"T2","verdict":"pass"}
+{"task_id":"T-104","kind":"work","difficulty":"L1","tier":"T1","verdict":"pass"}
+{"task_id":"T-105","kind":"work","difficulty":"L1","tier":"T1","verdict":"pass"}
+{"task_id":"T-106","kind":"work","difficulty":"L1","tier":"T1","verdict":"reject"}
+{"task_id":"T-107","kind":"work","difficulty":"L1","tier":"T2","verdict":"pass"}
+{"task_id":"T-108","kind":"work","difficulty":"L1","tier":"T2","verdict":"pass"}
+{"task_id":"T-109","kind":"work","difficulty":"L2","tier":"T0","verdict":"pass"}
+{"task_id":"T-110","kind":"work","difficulty":"L2","tier":"T0","verdict":"reject"}

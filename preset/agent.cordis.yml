@@ -1,0 +1,341 @@
+# tiered-coding agent preset · 分层协作模式
+#
+# 这是一个 AGENT-PLANE 组成文件。roster 把它挂载一次（standing mount），
+# 每个选用该 preset 的会话以父子作用域加入，于是这里注册的工具与提示段覆盖每个
+# 加入的 agent，而会话自身状态仍按 Session/Agent 隔离。
+#
+# 与出厂 `standard` 模式的唯一实质差别，是「委派」那一段：把原本单个通用
+# `subagent` 工具，换成四个**把档位钉死**的分层工具。这样方案里的三档路由
+# （T0 pro 思考 / T1 flash 思考 / T2 flash 非思考）与三条铁律（Planner 不写代码、
+# Worker 不做规划、Verifier 只看不改）从"提示词祈求"变成"机器约束"。
+#
+# 铁的纪律：任何发布服务（provide）的行必须待在带 `isolate` realm 的 group 里，
+# 否则它会发布到 root realm（进程全局），第二个 preset 发布同名就冲突，
+# 宿主读取时也会拿到别的 preset 的实例——`dsh-agent-presets` 在挂载时就会拒绝。
+
+# ── 身份 ────────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    suffix: Your working directory is {{cwd}}.
+    prefix: >-
+      You are a coding agent powered by the {{model}} model, operating in TIERED
+      COLLABORATION mode. Do not do everything yourself: delegate by tier.
+      plan_t0 only decomposes a goal into TaskCards and never writes code;
+      work_t1 handles single-point logic; work_t2 handles mechanical chores;
+      verify_t1 independently checks a diff against its acceptance criteria and
+      never edits. Hard, executable acceptance comes before any semantic
+      judgement, and a rejected card is retried once with its findings attached.
+      Load the `tiered-coding` skill for the TaskCard protocol.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+# shell-env 留在 HOST 组成里（apps/cli/src/web.ts 要注入它以发布
+# DSH_WEB_URL/DSH_WEB_MODE）；两个 shell 工具的 executors 也属于 host plane。
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── 文件系统 ────────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── 后台任务 ────────────────────────────────────────────────────────────────
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+# skill 注册表在 host 组成里、按作用域分层；这两行注册进**本 preset 自己的层**，
+# 所以不需要 realm。
+#
+# `customSkillDirs` 指向 preset 自带的 skills/ 目录：分层协作协议随 preset 走，
+# 而不是躺在用户的 skill 根里——preset 才是被复制和被编辑的单位。`baseUrl` 是
+# preset 自己的目录，所以无论 preset 装在哪，这个根都能解析到。
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── goals ───────────────────────────────────────────────────────────────────
+
+- id: command-goal
+  name: '@deepseek-ai/dsh-command-goal'
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+# ── plan mode ───────────────────────────────────────────────────────────────
+# 计划状态天然按 agent 存在，所以 entry-local realm 在这里不是变通，而是正确的生命周期。
+
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: '@deepseek-ai/dsh-plan-mode'
+      config:
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+              Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+              The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+              Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+              Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+
+# ── compaction ──────────────────────────────────────────────────────────────
+# compaction-basic 通过 ctx.get 读 toolResultPrune，所以 pruner 必须与它同 realm。
+# tokenMeter 故意**不**放进这个 realm：表留在 HOST plane。
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── 委派与工作流（本 preset 的核心）────────────────────────────────────────
+#
+# `subagents` 注册表与 spawn/fork 后端住在 HOST 组成里：注册表是进程单例，
+# 浏览器要通过 api-proxy 跨会话查询它，而一个 provider 名只能注册一次。
+# 本 preset 贡献的是**委派工具**，它们解析那个 host 注册表。
+#
+# `workflows` 不同——agent 之外没人读它——所以触达它的每一行都共享这里同一个
+# entry-local realm。
+#
+# ┌─ 三档路由：把模型档位钉死在工具实例上（方案 §2.1 / §5.1）──────────────┐
+# │ agentOptions 直接决定子代理走哪条 LLM 路由与是否思考：                  │
+# │   T0 = deepseek-v4-pro   + reasoningEffort high  （思考）              │
+# │   T1 = deepseek-v4-flash + reasoningEffort high  （思考）              │
+# │   T2 = deepseek-v4-flash + reasoningEffort off   （非思考）            │
+# │ 对照方案原文：DeepSeek 的思考模式是**请求级开关**，`off` 会落成         │
+# │ `thinking:{type:'disabled'}`，`high` 落成 `thinking:{type:'enabled'}`   │
+# │ 加 `reasoning_effort`。同一模型名即可升降档，不破坏缓存前缀。           │
+# │                                                                        │
+# │ maxDepth 是【绝对深度上限】：childDepth = parent + 1，超过就抛          │
+# │ SubagentDepthError。所以 `maxDepth: 1` = 该子代理合法，但它自己不能再   │
+# │ 派生 —— 正是「Worker 不做规划、范围不膨胀」。写成 0 会让工具彻底不可用。 │
+# │                                                                        │
+# │ toolFilter.deny 里只能写**真实存在**的全局工具名，写错会导致挂载失败。   │
+# │ 这里只 deny `write` / `edit`（Planner 拆完就走、Verifier 只看不改）。    │
+# └────────────────────────────────────────────────────────────────────────┘
+
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    # T0 · 规划层：只拆不写
+    - id: tool-plan-t0
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: plan_t0
+        backgroundMode: one-shot
+        maxDepth: 1
+        agentOptions:
+          provider: deepseek-official
+          model: deepseek-v4-pro
+          reasoningEffort: high
+        # deny 必须连 pwsh 一起 deny：本机 win32 上 tool-pwsh 对所有子代理启用，
+        # 只 deny write/edit 等于「声明式只拆不写」——子代理可用 pwsh 重定向落盘。
+        # 此为 A 组负向测试实测结论（见 tiered-coding/docs/BOARD.md 阻塞区 C）。
+        toolFilter:
+          deny: [write, edit, pwsh]
+        persona: >-
+          你是 T0 规划层（Planner）。你只把目标拆成结构化 TaskCard，绝不写实现代码、
+          绝不改动任何文件。每张卡必须给出 id / title / difficulty(L0|L1|L2) /
+          tier(T0|T1|T2) / goal / constraints / inScope / outOfScope /
+          acceptance{commands,expected} / contextRefs。contextRefs 只放文件指针
+          （path + 可选行号），**禁止内联文件内容**。宁可多拆一张卡，也不要写一行为实现。
+
+    # T1 · 单点逻辑执行层：思考模式
+    - id: tool-work-t1
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: work_t1
+        backgroundMode: one-shot
+        maxDepth: 1
+        agentOptions:
+          provider: deepseek-official
+          model: deepseek-v4-flash
+          reasoningEffort: high
+          maxTokens: 6000
+        persona: >-
+          你是 T1 执行层（Worker）。只完成指派给你的那一张任务卡，范围已经定死，
+          禁止"顺便"扩展、禁止改动 inScope 之外的文件。先跑硬验收命令，把**真实输出**
+          贴回来；不许把未验证的结果描述为已完成；同一问题失败超过 2 次就停下来上报阻塞。
+
+    # T2 · 机械粗活层：非思考模式
+    - id: tool-work-t2
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: work_t2
+        backgroundMode: one-shot
+        maxDepth: 1
+        agentOptions:
+          provider: deepseek-official
+          model: deepseek-v4-flash
+          reasoningEffort: off
+          maxTokens: 2500
+        persona: >-
+          你是 T2 机械执行层。只做模式固定的粗活：重命名、格式化、样板代码、补注释、
+          补 import、加日志埋点、测试骨架、字段迁移。不要做架构判断，不要扩展范围。
+          只回结构化结果，不要长篇解释。
+
+    # T1 · 独立复核层：只看不改
+    - id: tool-verify-t1
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: verify_t1
+        backgroundMode: one-shot
+        maxDepth: 1
+        agentOptions:
+          provider: deepseek-official
+          model: deepseek-v4-flash
+          reasoningEffort: high
+        # verify_t1 **保留 pwsh**：它的职责定义就是「自己跑验收命令」（TASK_BRIEF F4）。
+        # 上轮为堵「deny 拦不住能力」把它一起 deny，副作用是 F4 结构性不可满足
+        # （阻塞区 D），并已造成一次真实漏检（卡2 的 --help 从未实现却记成通过）。
+        # 为什么不能只给「只读 shell」：任何能跑命令的能力都能写文件（被测脚本自己就会写），
+        # 「只读命令白名单」在语义上不成立。故改为在**协议层**约束：
+        #   verify_t1 的一切执行必须经 scripts/verify-runner.mjs 在一次性副本里跑；
+        #   该执行器回传真工作区 SHA1 前后核对（workspaceUnchanged），队长再独立复核。
+        # 因此这里只 deny write/edit，恢复 pwsh。
+        toolFilter:
+          deny: [write, edit]
+        persona: >-
+          你是独立复核层（Verifier）。你只能看 diff 与验收标准，不要看 Worker 的推理过程。
+          铁律「先硬后软」：**自己**真实执行验收命令（不许采信 Worker 自报），命令不过就
+          直接判 reject，且不再做任何语义评价；硬验收通过后才做软验收，并主动加一个
+          反作弊探针（换一份输入，看输出数字是否随之变化，以识别硬编码/按名特判）。
+          【执行协议，强制】你**不得**在工作区里直接跑验收命令。一切执行必须走：
+            & "C:\Program Files\nodejs\node.exe" scripts\verify-runner.mjs "<工作区绝对路径>" --spec <规格.json>
+          规格文件形如 {"commands":["<验收命令1>","<验收命令2>"]}，写在 state/ 下。
+          该执行器在一次性副本里执行并回传真实 exitCode/stdout/stderr，
+          同时给出 workspaceUnchanged 字段证明真工作区未被改动。
+          把 exitCode 与关键输出原样写进 commandResults；若 workspaceUnchanged=false 判 reject。
+          输出 verdict(pass|reject) + commandResults(含真实退出码) +
+          findings（每条给 id/severity/problem/requiredFix）。
+
+    # fork 子代理：与父代理同路由，继承历史，保留 KV 缓存复用。不做档位改写。
+    # maxDepth 必须显式写：schema 默认是 3（tool-subagent/src/index.ts:129），
+    # 不写就等于允许 fork 链递归到深度 3 —— 与四个分层工具的 maxDepth: 1 不一致。
+    # fork provider 声明 depthLimit: true（subagent-fork-in-process/src/index.ts:67），
+    # 所以数值 maxDepth 在本 provider 上可被真正执行，不会 mount 失败。
+    - id: tool-subagent-fork
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable
+        maxDepth: 1
+
+    # 生产 dsh 不安装这两个可选 provider。装好对应 Bundle 并重启 Host 后，
+    # 复制本 preset 并去掉对应行的 disabled 即可。
+    - id: tool-subagent-codex
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: codex
+        toolName: subagent_codex
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+    - id: tool-subagent-claude-code
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: claude-code
+        toolName: subagent_claude_code
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+    # 多卡编排：workflow 的 agent(prompt,{schema,provider,model}) 能强制结构化输出，
+    # 是 TaskCard / Verdict 协议的天然落点。注意：agent() **不支持 reasoning_effort**，
+    # 所以思考档位要靠上面四个工具，workflow 只负责模型分档与批量编排。
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
+      config:
+        provider: spawn
+
+    - id: tool-workflow
+      name: '@deepseek-ai/dsh-tool-workflow'
+
+    - id: tool-ralph
+      name: '@deepseek-ai/dsh-tool-ralph'
+      disabled: true
+      config:
+        subagentProvider: spawn
+        maxRounds: 64
+
+# ── 其余模型面行 ────────────────────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# web 服务与搜索 provider 留在 host 组成；只有模型面工具按会话存在。
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+    searchTimeoutMs: 60000
+
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'
