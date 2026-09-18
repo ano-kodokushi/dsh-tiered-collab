@@ -249,6 +249,70 @@ Worker 自报改动后文件 **108 行**；队长与复核层双口径实测 **1
 
 **修法**：见 `scripts/verify-runner.mjs`（下节）。
 
+### 坑 7 · 验收命令因**环境**失败，而不是因产物失败
+
+写 `examples/acceptance-spec.json` 时用了 `node scripts/xxx.mjs` —— 看着最自然不过。
+**实测：全部命令 `CommandNotFoundException`。**
+
+**根因**：执行器的子进程**继承了宿主环境**，而宿主 `PATH` 是空字符串（AGENTS.md §2 的那条约束）。
+于是 `node` 不可用——**验收因为环境而失败，这是最没价值的失败**。
+
+**修法**：执行器把**自己所在的 node 目录注入子进程 `PATH`**。
+执行器本来就是用那个 node 跑起来的，把它加到 PATH 安全、无副作用：
+
+```js
+const childPath = [dirname(process.execPath), process.env.PATH ?? ''].join(';');
+spawnSync(shell, [...], { env: { ...process.env, PATH: childPath } });
+```
+
+> 这条坑的教训比修法更重要：**注入 PATH 之后错误"变了"** ——
+> 从"找不到 node"变成"副本里没有 `preset/agent.cordis.yml`"。
+> 这才暴露出第二个问题：执行器复制副本时**漏了 `preset/` 目录**。
+> 如果当时草率地把断言改成"允许失败"，就永远看不到真问题。
+
+---
+
+## 可跑示例：证明「校验器不是摆设」
+
+`examples/` 里有一个能真跑的示例。它挑出**不需要宿主就能验证**的两件事：
+
+```bash
+git clone https://github.com/ano-kodokushi/dsh-tiered-collab
+cd dsh-tiered-collab
+node examples/run-example.mjs
+```
+
+### ① 对照实验：坏例必须被抓住
+
+**坏例是从真文件复制再改生成的**（只改 `deny` 的内容），所以它永远与真文件同源、不会腐烂。
+示例断言三件事：
+
+| 断言 | 证明什么 |
+|---|---|
+| 坏例（`plan_t0` 缺 `pwsh`、`verify_t1` 多了 `pwsh`）→ **exit 1** | 校验器真能抓到坑 1 |
+| 坏例 2（`subagent_fork` 删掉 `maxDepth`）→ **exit 1** | 校验器真能抓到坑 2 |
+| **真文件 → exit 0、`problems: []`** | 「坏了」的标准有意义——真文件必须过 |
+
+**没有最后一条，前两条毫无价值**：一个永远报错的校验器也能"抓到"任何问题。
+
+### ② 隔离验收执行器：证明它在副本里跑
+
+示例用 `examples/acceptance-spec.json` 真跑一次 `verify-runner.mjs`，断言：
+
+- `commandCount=2` 且 `allPassed=true`
+- **`workspaceUnchanged=true`** —— 真工作区 SHA1 前后一致
+- 每条结果的 `ranInCopy` 都指向 `verify-sandbox-*` —— 确实跑在副本里
+
+### 它**不覆盖**什么（诚实声明）
+
+**负向测试跑不了** —— 那需要一遍分层会话（`plan_t0` 是否真的没有 `write`/`edit`/`pwsh`）。
+别人 clone 下来没有宿主，所以示例**不假装能代跑**，只打印步骤指引：
+
+```
+INFO  本示例**不覆盖**：负向测试（plan_t0 是否真的没有 write/edit/pwsh）——
+INFO    那需要一遍分层会话。步骤见 orchestrate/RUNBOOK-tiered.md §A。
+```
+
 ---
 
 ## 复用的两个工具
@@ -271,6 +335,12 @@ Worker 自报改动后文件 **108 行**；队长与复核层双口径实测 **1
 
 **参数缺失必须非零退出**：第一版在无参数时返回空命令数组，
 于是 `allPassed: true`、退出码 0——**等于「零条命令全部通过」的假绿**。已修。
+
+**它会替你把 node 加进子进程 PATH**（见坑 7）：所以规格里可以放心写 `node xxx.mjs`，
+不必写机器相关的绝对路径。若你的环境里 `node` 本就在 PATH 上，这一步无副作用。
+
+**副本包含这些目录**：`scripts/ fixtures/ docs/ orchestrate/ preset/ examples/`。
+（`preset/` 与 `examples/` 是最初漏掉的——验收里要校验构成文件本身，副本必须先带上它。）
 
 ```bash
 node scripts/verify-runner.mjs "<工作区绝对路径>" --spec <规格.json>

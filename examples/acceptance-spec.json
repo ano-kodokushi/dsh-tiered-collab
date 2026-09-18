@@ -1,0 +1,8 @@
+{
+  "_comment": "verify-runner 的规格示例。命令在一次性副本里执行，同时对真工作区做 SHA1 前后核对。",
+  "_note": "命令里一律用相对路径 —— 执行器已经把副本根设为工作目录。",
+  "commands": [
+    "node scripts/validate-preset.mjs preset/agent.cordis.yml",
+    "node scripts/verdict-stats.mjs --input fixtures/verdicts.sample.jsonl"
+  ]
+}

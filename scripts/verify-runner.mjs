@@ -16,10 +16,11 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { snapshotTree, diffSnapshots } from './tree-sha1.mjs';
 
-const COPY_DIRS = ['scripts', 'fixtures', 'docs', 'orchestrate'];
+// 副本要带上哪些目录。preset/ 必须在内：验收里经常要校验构成文件本身。
+const COPY_DIRS = ['scripts', 'fixtures', 'docs', 'orchestrate', 'preset', 'examples'];
 const MAX_OUTPUT_CHARS = 4000;
 // shell 与复制工具必须写绝对路径：本机 PATH 为空（AGENTS.md §2 实测）。
 // 实测本机只有 Windows PowerShell 5.1；装了 pwsh 7 时把它挪到最前即可。
@@ -75,10 +76,20 @@ function main(argv) {
   }
 
   const before = snapshotTree(workspace, COPY_DIRS);
+  // 把「当前 node 所在目录」注入子进程 PATH。
+  // 为什么必须做：某些托管环境（含本仓库开发用的沙箱）**PATH 是空字符串**，
+  //   于是规格里写 `node xxx.mjs` 会直接报 CommandNotFoundException——
+  //   这会让验收命令因环境而非产物失败，是最没价值的失败。
+  //   执行器自己就是用这个 node 跑起来的，把它加到 PATH 是安全且无副作用的。
+  const nodeDir = dirname(process.execPath);
+  const childPath = [nodeDir, process.env.PATH ?? ''].filter((s) => s !== '').join(';');
   const results = [];
   for (const command of cli.commands) {
     const r = spawnSync(shell, ['-NoProfile', '-Command', command], {
-      cwd: copyRoot, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
+      cwd: copyRoot,
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+      env: { ...process.env, PATH: childPath },
     });
     results.push({
       command, exitCode: r.status, ranInCopy: copyRoot,
