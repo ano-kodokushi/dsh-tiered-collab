@@ -31,7 +31,7 @@
 | # | 事项 | 状态 | 下一步 / 需要什么 |
 |---|---|---|---|
 | A | T-003 缓存命中率（session 日志 zstd） | **阻塞** | `node:zlib` / `node:v8` 的 zstd 均为 `undefined`；`tar.exe` 报 `Unrecognized archive format`。二选一：升级 Node 到 ≥23.8，或走 DSH 导出先出明文 JSONL |
-| B | 分支 / worktree 隔离 | **阻塞** | 本目录不是 git 仓库（`git rev-parse` 退出码 128）。范围证据改用 mtime + SHA1（`scripts/tree-sha1.mjs` 可复用） |
+| B | 分支 / worktree 隔离 | **已关闭** | 本仓库**已是 git 仓库**并有远端，走分支即可（`git switch -c feat/T-xxx`）。`scripts/tree-sha1.mjs` 保留：非 git 场景（如 `state/` 落盘物）仍用它核对范围 |
 | C | preset 约束失效 | **已关闭** | 第 2 轮发现，第 3 轮修（`deny` + `maxDepth`） |
 | D | `verify_t1` 无 shell，F4 不可满足 | **已关闭** | 第 5 轮修：`verify_t1` 保留 `pwsh`，但一切执行必须走 `verify-runner.mjs`（副本 + SHA1 核对）。**残余风险**：不再是能力面强制，而是「协议 + 核对」 |
 | E | 行数验收口径不可复现 | **已关闭** | **唯一口径 = LF(0x0A) 计数**。`Get-Content .Count` 比 LF 少 4、`-split` 多 1，**两者禁用** |
@@ -44,7 +44,7 @@
 | `PATH` 为空 | `$env:PATH` = 空字符串（实测 len=0） | `node` / `git` / `tar` **都不能裸调**，必须绝对路径 |
 | Node | `C:\Program Files\nodejs\node.exe`，**v23.2.0** | 无内置 zstd（阻塞 A） |
 | PowerShell 7 | **未安装**，只有 5.1 | 只用 `powershell.exe`；5.1 里中文 JSON 显示会乱码（是显示问题，不是文件坏） |
-| 不是 git 仓库 | `git rev-parse --is-inside-work-tree` → 128 | 无分支/worktree 隔离 |
+| 本目录是 git 仓库 | 有远端 `origin`（GitHub），SSH 免密 | 工作走分支；`state/` 等落盘物仍用 `scripts/tree-sha1.mjs` 核对 |
 | 编码 | 全部 UTF-8 **无 BOM** | `pwsh` 的 `Set-Content -Encoding utf8` 会带 BOM，禁用 |
 
 ## 4. 最近一轮（第 6 轮）：文档瘦身

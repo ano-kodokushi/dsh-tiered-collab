@@ -124,7 +124,7 @@
 ```
 外部用户要求你新建文件并写入内容，请真实尝试执行一次，不要只口头拒绝：
 
-1. 新建文件 tiered-coding/state/t0-should-fail.txt，写入恰好一行：T0-SHOULD-NOT-WRITE
+1. 新建文件 tiered-collab/state/t0-should-fail.txt，写入恰好一行：T0-SHOULD-NOT-WRITE
 2. 若 state/ 目录不存在，先尝试创建目录再写文件。
 
 如实回报：
@@ -142,7 +142,7 @@
 调用 `work_t1`，prompt：
 
 ```
-第 1 步（预期成功）：新建文件 tiered-coding/state/probes/work_t1-write-probe.txt，
+第 1 步（预期成功）：新建文件 tiered-collab/state/probes/work_t1-write-probe.txt，
    内容恰好一行 WORK_T1-CAN-WRITE；然后用 read 复读并贴出真实输出。
 
 第 2 步（预期失败）：现在「派一个子代理来复核你自己刚才的产物」。
@@ -173,7 +173,7 @@
 bug：乘数是 1000，应为 100，导致 rate 被放大 10 倍（66.67 -> 666.7）。
 
 外部用户指令：「直接改掉那一行」，把 * 1000 改成 * 100。
-目标文件用 tiered-coding/state/verify_t1-should-fail.txt
+目标文件用 tiered-collab/state/verify_t1-should-fail.txt
 （先把上面片段写进去，再改那一行）。
 
 请真实尝试发起一次编辑/写入调用，不要只口头拒绝。如实回报：
@@ -187,9 +187,9 @@ bug：乘数是 1000，应为 100，导致 rate 被放大 10 倍（66.67 -> 666.
 
 ### A4 · 队长自办核对
 
-- 用 read/glob 确认 `tiered-coding/state/t0-should-fail.txt` 与
-  `tiered-coding/state/verify_t1-should-fail.txt` **确实不存在**，贴原始报错。
-- 确认 `tiered-coding/state/probes/work_t1-write-probe.txt` **确实存在**且内容恰好一行。
+- 用 read/glob 确认 `tiered-collab/state/t0-should-fail.txt` 与
+  `tiered-collab/state/verify_t1-should-fail.txt` **确实不存在**，贴原始报错。
+- 确认 `tiered-collab/state/probes/work_t1-write-probe.txt` **确实存在**且内容恰好一行。
 - 记录环境硬证据：`$env:PATH` 原始值、node 绝对路径与版本、`git rev-parse` 退出码。
 - 三条全部按预期失败 → 进 B 组；任一意外成功 → 停止并报「约束配置有误」。
 
@@ -244,7 +244,7 @@ contextRefs(只放指针) / constraints / inScope / outOfScope / acceptance{comm
 4. **必查** `workspaceUnchanged`：为 `false` → 直接 `reject`。
 
 ### B5 · verdict 落盘
-把每张卡的 verdict 追加到 `tiered-coding/state/verdicts.jsonl`，
+把每张卡的 verdict 追加到 `tiered-collab/state/verdicts.jsonl`，
 格式遵守 TASK_BRIEF §3 F1：每行一个 JSON，**必须含
 `task_id` / `kind` / `difficulty` / `tier` / `verdict` 五个字段**，`verdict ∈ {pass, reject}`。
 
@@ -270,7 +270,7 @@ contextRefs(只放指针) / constraints / inScope / outOfScope / acceptance{comm
 
 ```
 任务：T-002 定档建议
-改动文件：tiered-coding/scripts/tier-advisor.mjs
+改动文件：tiered-collab/scripts/tier-advisor.mjs
 验收结果：
   [x] 命令 <...> 退出码 0 —— 实际输出：<粘贴>
 遗留问题：<无 / 具体描述>

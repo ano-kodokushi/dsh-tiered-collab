@@ -1,5 +1,5 @@
 ---
-name: tiered-coding
+name: tiered-collab
 description: Run coding work in tiered collaboration mode - decompose with plan_t0, execute single-point logic with work_t1, offload mechanical chores to work_t2, and independently review with verify_t1. Use whenever a task should be split into TaskCards with executable acceptance rather than done in one long conversation, or when a rejected result must be retried with its findings.
 ---
 

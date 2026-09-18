@@ -1,5 +1,5 @@
 /**
- * tiered-coding · Phase 1 编排脚本体（canonical 源）
+ * tiered-collab · Phase 1 编排脚本体（canonical 源）
  *
  * 用法：把本文件正文（去掉本段注释）作为 `workflow` 工具的 script 参数。
  * 阶段：plan(T0) → implement(T1/T2) → verify(T1) → escalate(带 findings 重试一次)
@@ -25,13 +25,13 @@ const ENV = [
   '【本机环境硬约束，违反必然失败】',
   '- 沙箱内 PATH 是空字符串：node / git / npm 都不能裸调，必须写绝对路径。',
   '- Node 绝对路径：C:\\Program Files\\nodejs\\node.exe （v23.2.0）',
-  '- 本仓库根目录是 tiered-coding/，不要往仓库外写文件。',
+  '- 本仓库根目录是 tiered-collab/，不要往仓库外写文件。',
   '- 只用 Node 内置模块，禁止第三方依赖；文件 UTF-8 无 BOM。',
   '- 只允许 Windows PowerShell（pwsh 工具）。',
 ].join('\n')
 
-const ACCEPT_A = '& "C:\\Program Files\\nodejs\\node.exe" tiered-coding/scripts/verdict-stats.mjs --input tiered-coding/fixtures/verdicts.sample.jsonl'
-const ACCEPT_B = '& "C:\\Program Files\\nodejs\\node.exe" tiered-coding/scripts/verdict-stats.mjs --input tiered-coding/fixtures/verdicts.alt.jsonl'
+const ACCEPT_A = '& "C:\\Program Files\\nodejs\\node.exe" tiered-collab/scripts/verdict-stats.mjs --input tiered-collab/fixtures/verdicts.sample.jsonl'
+const ACCEPT_B = '& "C:\\Program Files\\nodejs\\node.exe" tiered-collab/scripts/verdict-stats.mjs --input tiered-collab/fixtures/verdicts.alt.jsonl'
 
 const EXPECT_A = [
   'L0 T2 pass=3 total=3 rate=100.0%',
@@ -127,8 +127,8 @@ const plannerPrompt = [
   '你是 T0 规划层（Planner）。你只拆任务，绝不写实现代码，也绝不输出任何文件内容。',
   '',
   '先用 read 工具真实读取这两个文件，不要凭猜测：',
-  '- tiered-coding/docs/TASK_BRIEF.md（重点看 §3 的 F2 输出契约与 §4 技术约束）',
-  '- tiered-coding/fixtures/verdicts.sample.jsonl（验收输入样本，10 条记录）',
+  '- tiered-collab/docs/TASK_BRIEF.md（重点看 §3 的 F2 输出契约与 §4 技术约束）',
+  '- tiered-collab/fixtures/verdicts.sample.jsonl（验收输入样本，10 条记录）',
   '',
   '目标：把里程碑 M1 的 T-001「实现通过率矩阵脚本」拆成**一张原子任务卡**。',
   '',
@@ -137,7 +137,7 @@ const plannerPrompt = [
   '产出规则：',
   '- difficulty：L0 机械型 / L1 单点逻辑型 / L2 架构型，按你的判断打标。',
   '- tier：按 difficulty 给出建议档位（L0→T2，L1→T1，L2→T0）。',
-  '- inScope：**只能有 1 个新文件** tiered-coding/scripts/verdict-stats.mjs。',
+  '- inScope：**只能有 1 个新文件** tiered-collab/scripts/verdict-stats.mjs。',
   '- outOfScope：至少写明不许改 fixtures/、不许改 docs/、不许引入依赖。',
   '- acceptance.commands：必须是可直接执行的 PowerShell 命令，含 node 绝对路径。',
   '- acceptance.expected：把 F2 契约里那 5 行期望输出原样写进去。',
@@ -157,7 +157,7 @@ function workerPrompt(card, attempt, priorFindings) {
     `【上一次的失败原因（必须针对性修复）】\n${priorFindings}`,
     '',
     '执行要求：',
-    '1. 先 read tiered-coding/docs/TASK_BRIEF.md 的 §3，确认 F2 输出契约（5 行的确切格式与数值规则）。',
+    '1. 先 read tiered-collab/docs/TASK_BRIEF.md 的 §3，确认 F2 输出契约（5 行的确切格式与数值规则）。',
     '2. 只在 inScope 内新建文件，不要碰 fixtures/ 与 docs/。',
     '3. 自己用 pwsh 跑一次验收命令，确认退出码 0 且输出与契约完全一致后再回报。',
     '',

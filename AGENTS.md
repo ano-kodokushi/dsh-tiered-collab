@@ -1,16 +1,21 @@
-# AGENTS.md · tiered-coding 仓库治理书
+# AGENTS.md · tiered-collab 仓库治理书
 
-> AI Agent 在本仓库工作的**唯一行为准则**。**按 §1 的角色裁剪读**，不要无脑全读。
+> AI Agent 在本仓库工作的**唯一行为准则**。
+> 本仓库**是 git 仓库**，工作走分支：开分支 → 干活 → `push-task.mjs` 收口（见 §3）。
 > 冲突时优先级：本文件 > 任务书 > 计划书。
 
 ## 0. 项目速览
 
 | 项 | 内容 |
 |---|---|
-| 项目名 | tiered-coding |
+| 项目名 | `dsh-tiered-collab`（GitHub 仓库名；preset 目录名用 `tiered-collab`） |
 | 一句话目标 | 用「分层模型路由 + 上下文隔离 + 可执行验收」把编码 Agent 的 token 成本压到线性 |
-| 技术栈 | Node 23（`C:\Program Files\nodejs\node.exe`）+ ESM `.mjs`，零第三方依赖 |
-| 当前阶段 | Phase 1 · 最小闭环（Planner → Worker → Verifier） |
+| 技术栈 | Node + ESM `.mjs`，**零第三方依赖**（只用 `node:` 内置模块） |
+| 当前阶段 | A 组负向测试 3/3 按预期失败；已完成一轮单体 vs 分层的 A/B 实测（结论见 `README.md`） |
+
+> **可移植性提醒**：本文件里的绝对路径来自开发机（Windows + `PATH` 为空的沙箱）。
+> 换机器时用环境变量 `DSH_GIT` 覆盖 git 路径；`node` 用你自己 PATH 里的即可。
+> `scripts/verify-runner.mjs` 会自己探测可用的 shell，不必改代码。
 
 ## 1. 开工前必读（按角色裁剪，不要全读）
 
@@ -35,7 +40,7 @@
 | `PATH` 为空 | 沙箱内 `$env:PATH` 是空字符串 | `node` / `git` / `npm` **都不能裸调**，必须写绝对路径 |
 | Node | `C:\Program Files\nodejs\node.exe`，v23.2.0 | **无** `zlib.zstdDecompressSync`（zstd 到 v23.8 才有） |
 | Git | `C:\Program Files\Git\cmd\git.exe`，2.26.0 | 可用，但同样要绝对路径 |
-| **本目录不是 git 仓库** | `git rev-parse --is-inside-work-tree` → 退出码 128 | **分支隔离 / git worktree 沙箱暂不可用**；改动范围证据改用 mtime + SHA1 核对 |
+| **本目录是 git 仓库** | 有远端 `origin`（GitHub），SSH 免密可用 | 工作走分支：`git switch -c feat/T-xxx-描述`；范围证据可用 git，也可用 `scripts/tree-sha1.mjs`（非 git 场景仍需要它） |
 | 编码 | 全部文件 UTF-8 无 BOM | 中文注释不得出现乱码 |
 
 验收命令一律写成：
@@ -102,7 +107,7 @@ state/       运行期落盘（verdicts.jsonl 等），不进 git
 
 ```
 任务：T-001 通过率矩阵脚本
-改动文件：tiered-coding/scripts/verdict-stats.mjs
+改动文件：tiered-collab/scripts/verdict-stats.mjs
 验收结果：
   [x] 命令 <...> 退出码 0 —— 实际输出：<粘贴>
   [x] L0 T2 pass=3 total=3 rate=100.0%

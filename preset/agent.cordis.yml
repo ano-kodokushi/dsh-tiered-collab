@@ -1,4 +1,4 @@
-# tiered-coding agent preset · 分层协作模式
+# dsh-tiered-collab agent preset · 分层协作模式
 #
 # 这是一个 AGENT-PLANE 组成文件。roster 把它挂载一次（standing mount），
 # 每个选用该 preset 的会话以父子作用域加入，于是这里注册的工具与提示段覆盖每个
@@ -27,7 +27,7 @@
       verify_t1 independently checks a diff against its acceptance criteria and
       never edits. Hard, executable acceptance comes before any semantic
       judgement, and a rejected card is retried once with its findings attached.
-      Load the `tiered-coding` skill for the TaskCard protocol.
+      Load the `tiered-collab` skill for the TaskCard protocol.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -187,7 +187,7 @@
           reasoningEffort: high
         # deny 必须连 pwsh 一起 deny：本机 win32 上 tool-pwsh 对所有子代理启用，
         # 只 deny write/edit 等于「声明式只拆不写」——子代理可用 pwsh 重定向落盘。
-        # 此为 A 组负向测试实测结论（见 tiered-coding/docs/BOARD.md 阻塞区 C）。
+        # 此为 A 组负向测试实测结论（见 tiered-collab/docs/BOARD.md 阻塞区 C）。
         toolFilter:
           deny: [write, edit, pwsh]
         persona: >-
