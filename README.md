@@ -280,7 +280,8 @@ node scripts/verify-runner.mjs "<工作区绝对路径>" --spec <规格.json>
 ### `scripts/tree-sha1.mjs` —— 文件树 SHA1 快照
 
 `snapshotTree` / `diffSnapshots`，覆盖**新增 / 改动 / 删除**三类。
-本仓库不是 git 仓库，没有 `git status`，所以范围证据只能靠哈希。一处实现、多处复用。
+用途是给**任何一棵树**做执行前后比对——典型场景是「验收跑完，证明真工作区没被动过」
+（`verify-runner.mjs` 就用它）。一处实现、多处复用。
 
 ---
 
