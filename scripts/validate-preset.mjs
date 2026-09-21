@@ -31,7 +31,7 @@ for (let i = 0; i < lines.length; i += 1) {
   }
 
   const t = raw.trim();
-  const m = /^(deny|maxDepth|id|name|config|group|isolate|persona|provider|toolName|backgroundMode|agentOptions|toolFilter|model|reasoningEffort|maxTokens|disabled|suffix|prefix|maxBytes|customSkillDirs|section|thresholdChars|headChars|tailChars|subagentProvider|maxRounds|fetch|searchTimeoutMs|allowParallelInProgress|roots|path|trust|sampleOverCapGlobResults|workflowEngine|planMode|compaction|toolResultPruner|tokenMeter|enableRunInBackground|modelSelectionSettings|backgroundMode):/.exec(t);
+  const m = /^(deny|allow|maxDepth|id|name|config|group|isolate|persona|provider|toolName|backgroundMode|agentOptions|toolFilter|model|reasoningEffort|maxTokens|disabled|suffix|prefix|maxBytes|customSkillDirs|section|thresholdChars|headChars|tailChars|subagentProvider|maxRounds|fetch|searchTimeoutMs|allowParallelInProgress|roots|path|trust|sampleOverCapGlobResults|workflowEngine|planMode|compaction|toolResultPruner|tokenMeter|enableRunInBackground|modelSelectionSettings|backgroundMode):/.exec(t);
   const isSeqItem = t.startsWith('- ');
 
   if (!m && !isSeqItem) {

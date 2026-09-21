@@ -1,0 +1,2 @@
+name: 分层协作模式（本地档）
+description: 在 tiered-coding 四档基础上，把 T2 机械粗活拆成"本地优先、云端回落"两层：work_t2_local 走本机 Ollama（Mellum2-12B-A2.5B，零 token 成本、文件不出机器），本机离线或该卡失败时回落 work_t2（deepseek-flash 非思考）。其余三档与 tiered-coding 一致：plan_t0（pro 思考，只拆不写）/ work_t1（flash 思考，单点逻辑）/ verify_t1（flash 思考，只看不改，先硬后软）。含 TaskCard 协议 skill、workflow 多卡编排与计划模式。
