@@ -30,7 +30,7 @@ toolFilter:
 只要 shell 可用，就等于有写权限——`node foo.mjs` 既是"执行验收"，
 也是"运行一个可能写盘的进程"。「只读 shell」这件事在语义上不成立，任何命令白名单都堵不死。
 
-> 完整 6 条踩坑与修法见下文「[我们真实踩过的坑](#我们真实踩过的坑本仓库最有价值的部分)」。
+> 完整 7 条踩坑与修法见 [docs/PITFALLS.md](docs/PITFALLS.md)。
 > `docs/BOARD-archive.md` 里是逐轮的原始证据。
 
 ### 值不值，取决于你想解决哪个问题
@@ -62,39 +62,6 @@ toolFilter:
 结论：在这个尺度上，分层买到的是"可能的更少返工"，不是"更省 token"。
 它值不值，取决于你的任务会不会第一次就做错。
 
-### 亲手验证（一分钟，不需要装宿主）
-
-```bash
-git clone https://github.com/ano-kodokushi/dsh-tiered-collab
-cd dsh-tiered-collab
-node scripts/validate-preset.mjs preset/agent.cordis.yml
-```
-
-期望输出里含 `"problems": []` 与 `"ok": true`，退出码 0（脚本会打印完整 JSON：
-
-```json
-{
-  "file": "preset\\agent.cordis.yml",
-  "lines": 342,
-  "registryRows": 34,
-  "denyLines": ["L192: deny: [write, edit, pwsh]", "L257: deny: [write, edit]"],
-  "forkHasExplicitMaxDepth": true,
-  "problems": [],
-  "ok": true
-}
-```
-
-）。这个校验器会断言：
-
-- 两处 `deny` 的不对称设计（`plan_t0` 含 `pwsh`、`verify_t1` 不含）
-- `subagent_fork` 有显式 `maxDepth`
-- 组成文件的 YAML 形状合法、没有 TAB
-
-别跳过这步：一个组成文件写坏会让每个新会话都挂不起来——
-而它是静默的，你只会看到"新模式用不了"。
-
----
-
 ## 它主张什么
 
 > 90% 的成本优化来自「喂给模型什么」，只有 10% 来自「用哪个模型」。
@@ -124,41 +91,9 @@ node scripts/validate-preset.mjs preset/agent.cordis.yml
 2. Worker 不做规划 —— 它收到的是已定范围的原子任务，禁止"顺便"扩展
 3. Verifier 不看推理过程 —— 只看最终 diff 与验收标准。看过程既费 token，又容易被流畅的推理论证说服
 
-为什么 `verify_t1` 与 `plan_t0` 的约束不一样（这是踩坑后改的，详见下节）：
+为什么 `verify_t1` 与 `plan_t0` 的约束不一样（这是踩坑后改的，见 [docs/PITFALLS.md](docs/PITFALLS.md) 坑 6）：
 规划层不需要执行命令，所以连 shell 一起禁掉；复核层的职责就是执行验收，
 禁掉 shell 等于取消这个角色。写入风险改由「副本执行协议」兜底。
-
-### 可选：给机械档加一个本地档（`preset-local/`）
-
-仓库里另有一个五档变体 `preset-local/`，它不改前四档，只把 T2 机械活拆成
-「本地优先 + 云端回落」两层：
-
-| 档位 | 工具名 | 路由 | 回落 |
-|---|---|---|---|
-| T2-L | `work_t2_local` | 本机 Ollama（如 `mellum2-t2-16k`，12B · 16K 上下文 · 无推理档） | 本地离线或该卡失败 → `work_t2` |
-| T2 | `work_t2` | `deepseek-v4-flash` 非思考 | — |
-
-它为什么值得单独存在：机械活失败后果最轻，且文件不出机器。
-质量要求高的三档（规划 / 单点逻辑 / 复核）留在云端不动。
-
-装它比前四档多两个约束，都是踩出来的：
-
-1. 必须裁工具面。子代理默认带 ~58 个工具，光工具定义就约 14,629 token——
-   对 16K 上下文的 12B 模型是致命的，既撑爆预算也让工具选择极不可靠。
-   所以用 `toolFilter.allow` 白名单裁到 6 个：
-   ```yaml
-   toolFilter:
-     allow: [read, write, edit, grep, glob, pwsh]
-   ```
-   （`pwsh` 保留是对的：这是 Worker 档，可以写文件。
-   `deny: [pwsh]` 只施加给 `plan_t0` 与 `verify_t1`。）
-
-2. 不能写 `reasoningEffort`——连 `"off"` 都不行。
-   本机模型在 settings 里声明为 `reasoningEfforts: false`（无推理档），
-   而 LLM 门面层规定：推理能力为 undefined 时请求里不得出现任何档位，
-   否则抛 `UNSUPPORTED_REASONING_EFFORT`。省略即取 provider 默认。
-
----
 
 ## 安装
 
@@ -198,286 +133,6 @@ node scripts/validate-preset.mjs "<DSH_HOME>/.agent-presets/tiered-collab/agent.
 - `subagent_fork` 有显式 `maxDepth`
 - 缩进/形状在 preset 用到的 YAML 子集内合法
 - 没有 TAB（YAML 非法缩进）
-
----
-
-## 我们真实踩过的坑（本仓库最有价值的部分）
-
-下面每一条都是实测出来的，不是推演。每条都记录了现象、根因、修法。
-
-### 坑 1 · `deny` 只拦工具名，拦不住能力 
-
-写了 `toolFilter: deny: [write, edit]`，以为「只拆不写」已经成立。
-实测：三个负向测试全部"意外成功" —— `plan_t0` / `verify_t1` 都用 `pwsh` 的
-`Set-Content` 把文件写出来了，且全程无报错。
-
-根因：shell 是合法工具。只要它可用，就等于有写权限。
-「只读 shell」这件事在语义上不成立——`node foo.mjs` 既是"执行验收"也是"运行一个可能写盘的进程"，
-任何命令白名单都堵不死。
-
-修法：分角色处理。规划层连 `pwsh` 一起 `deny`（它确实不需要 shell）；
-复核层保留 shell，但一切执行必须走隔离执行器（见坑 6 与 `scripts/verify-runner.mjs`）。
-
-### 坑 2 · `maxDepth` 不写 ≠ 无限，默认是 3
-
-`subagent_fork` 那一行没写 `maxDepth`，preset 注释里却声称"该子代理不能再派生"。
-实测：fork 链能递归到深度 3。
-
-根因：工具 schema 里 `maxDepth` 的默认值是 3，不是"无限"。
-不写就是放任它递归三层，与四个分层工具显式写的 `maxDepth: 1` 不一致。
-
-修法：`subagent_fork` 补上显式 `maxDepth: 1`。
-（顺带确认了 fork provider 声明 `depthLimit: true`，所以数值 `maxDepth` 能被真正执行，
-不会在挂载时失败。）
-
-### 坑 3 · 验收命令"只打印不 assert" → 缺陷全绿通过 
-
-一张卡的验收命令长这样：
-
-```powershell
-node script.mjs --help; Write-Host "exit=$LASTEXITCODE"
-```
-
-它只打印退出码，不做判定。于是 `--help` 根本没实现（退出码 2、stdout 零输出），
-却记录为通过。
-
-同时另一条命令用 `|` 把输出接成字符串再匹配——而帮助文本写在 stderr，`|` 只接 stdout，
-所以那个变量恒为空串，"不含裸 node"恒真。
-
-教训：没有断言的验收命令，等于没验收。
-每一条验收都必须有可判定的通过标准（退出码 / 行数 / 精确字符串），不能只打印。
-
-### 坑 4 · 度量口径不定义 → 三个数字都对
-
-任务卡验收标准写「`LINES=111`」，没给度量命令。结果同一个文件：
-
-| 口径 | 结果 |
-|---|---|
-| 某 CLI 工具按 CRLF 计行 | 119 |
-| `LF` 计数 | 124 |
-| `split(/\r?\n/)`（含末尾空段） | 125 |
-
-三个都说得通，验收无法判定。
-
-教训：数字型验收标准必须自带度量命令。本项目后来定为唯一口径 = LF 计数，
-并实测确认 `Get-Content .Count` 比 LF 计数少 4，属不可靠口径，禁用。
-
-### 坑 5 · 子代理自报不可采信
-
-Worker 自报改动后文件 108 行；队长与复核层双口径实测 124 行。
-正是这一条导致判 `reject`。（重试时该 Worker 主动认账并给出改动前后双口径证据。）
-
-教训：自报数字一律独立复测。 这不是不信任模型，是流程必须这样设计。
-
-### 坑 6 · 复核层没 shell → 角色取消
-
-为了堵坑 1，把 `verify_t1` 的 `pwsh` 一起 `deny` 了。
-副作用：复核层再也无法执行验收命令，而它的职责定义就是执行验收。
-
-结果两张卡的复核都只能给出"拿不到 exitCode"的程序性 reject——
-不是产物缺陷，而是环境让这个角色无法履职。
-
-修法：见 `scripts/verify-runner.mjs`（下节）。
-
-### 坑 7 · 验收命令因环境失败，而不是因产物失败
-
-写 `examples/acceptance-spec.json` 时用了 `node scripts/xxx.mjs` —— 看着最自然不过。
-实测：全部命令 `CommandNotFoundException`。
-
-根因：执行器的子进程继承了宿主环境，而宿主 `PATH` 是空字符串（AGENTS.md §2 的那条约束）。
-于是 `node` 不可用——验收因为环境而失败，这是最没价值的失败。
-
-修法：执行器把自己所在的 node 目录注入子进程 `PATH`。
-执行器本来就是用那个 node 跑起来的，把它加到 PATH 安全、无副作用：
-
-```js
-const childPath = [dirname(process.execPath), process.env.PATH ?? ''].join(';');
-spawnSync(shell, [...], { env: { ...process.env, PATH: childPath } });
-```
-
-> 这条坑的教训比修法更重要：注入 PATH 之后错误"变了" ——
-> 从"找不到 node"变成"副本里没有 `preset/agent.cordis.yml`"。
-> 这才暴露出第二个问题：执行器复制副本时漏了 `preset/` 目录。
-> 如果当时草率地把断言改成"允许失败"，就永远看不到真问题。
-
----
-
-## 可跑示例：证明「校验器不是摆设」
-
-`examples/` 里有一个能真跑的示例。它挑出不需要宿主就能验证的两件事：
-
-```bash
-git clone https://github.com/ano-kodokushi/dsh-tiered-collab
-cd dsh-tiered-collab
-node examples/run-example.mjs
-```
-
-### ① 对照实验：坏例必须被抓住
-
-坏例是从真文件复制再改生成的（只改 `deny` 的内容），所以它永远与真文件同源、不会腐烂。
-示例断言三件事：
-
-| 断言 | 证明什么 |
-|---|---|
-| 坏例（`plan_t0` 缺 `pwsh`、`verify_t1` 多了 `pwsh`）→ exit 1 | 校验器真能抓到坑 1 |
-| 坏例 2（`subagent_fork` 删掉 `maxDepth`）→ exit 1 | 校验器真能抓到坑 2 |
-| 真文件 → exit 0、`problems: []` | 「坏了」的标准有意义——真文件必须过 |
-
-没有最后一条，前两条毫无价值：一个永远报错的校验器也能"抓到"任何问题。
-
-### ② 隔离验收执行器：证明它在副本里跑
-
-示例用 `examples/acceptance-spec.json` 真跑一次 `verify-runner.mjs`，断言：
-
-- `commandCount=2` 且 `allPassed=true`
-- `workspaceUnchanged=true` —— 真工作区 SHA1 前后一致
-- 每条结果的 `ranInCopy` 都指向 `verify-sandbox-*` —— 确实跑在副本里
-
-### 它不覆盖什么（诚实声明）
-
-负向测试跑不了 —— 那需要一遍分层会话（`plan_t0` 是否真的没有 `write`/`edit`/`pwsh`）。
-别人 clone 下来没有宿主，所以示例不假装能代跑，只打印步骤指引：
-
-```
-INFO  本示例**不覆盖**：负向测试（plan_t0 是否真的没有 write/edit/pwsh）——
-INFO    那需要一遍分层会话。步骤见 orchestrate/RUNBOOK-tiered.md §A。
-```
-
----
-
-## 复用的两个工具
-
-### `scripts/verify-runner.mjs` —— 隔离验收执行器
-
-在一次性副本里执行验收命令，回传结构化报告：
-
-| 字段 | 含义 |
-|---|---|
-| `results[].exitCode` | 每条命令的真实退出码 |
-| `results[].stdout` / `stderr` | 原样回传（超长截断） |
-| `results[].ranInCopy` | 证明跑在副本里 |
-| `workspaceUnchanged` | 真工作区执行前后 SHA1 全量比对 |
-| `changedPaths` | 若真工作区被改，列出具体文件 |
-
-为什么命令走 JSON 文件而不是命令行参数：带空格的绝对路径在 argv 上会被按空白切碎
-（实测 `& "C:\Program Files\nodejs\node.exe" ...` 被切成 4 个 token，
-命令静默拆坏却依然"跑完"）。JSON 对引号与空格免疫。
-
-参数缺失必须非零退出：第一版在无参数时返回空命令数组，
-于是 `allPassed: true`、退出码 0——等于「零条命令全部通过」的假绿。已修。
-
-它会替你把 node 加进子进程 PATH（见坑 7）：所以规格里可以放心写 `node xxx.mjs`，
-不必写机器相关的绝对路径。若你的环境里 `node` 本就在 PATH 上，这一步无副作用。
-
-副本包含这些目录：`scripts/ fixtures/ docs/ orchestrate/ preset/ examples/`。
-（`preset/` 与 `examples/` 是最初漏掉的——验收里要校验构成文件本身，副本必须先带上它。）
-
-```bash
-node scripts/verify-runner.mjs "<工作区绝对路径>" --spec <规格.json>
-# 规格.json: {"commands":["<验收命令1>","<验收命令2>"]}
-```
-
-### `scripts/tree-sha1.mjs` —— 文件树 SHA1 快照
-
-`snapshotTree` / `diffSnapshots`，覆盖新增 / 改动 / 删除三类。
-用途是给任何一棵树做执行前后比对——典型场景是「验收跑完，证明真工作区没被动过」
-（`verify-runner.mjs` 就用它）。一处实现、多处复用。
-
----
-
-## 实测数据：分层 vs 单体
-
-同一个任务（修 4 个 bug 的小项目，约 10 KB），分别在单体模式与分层模式下跑一遍：
-
-| 指标 | 单体 | 分层 | 差 |
-|---|---|---|---|
-| 模型消息数 | 9 | 9 | 平 |
-| 工具调用 | 20 | 19 | −1 |
-| 用时 | 49 秒 | 41 秒 | −16% |
-| 总用量 | 330,043 | 296,073 | −10.3% |
-| 缓存命中 | 97.2% | 96.2% | −1.0 pt |
-| 未缓存输入 | 9,063 | 10,896 | +20% |
-| 等效全价 | 47,342 | 45,549 | −3.8% |
-
-我的判读（不美化）：
-
-- 这是平局，不是胜利。 3.8% 落在单次运行的噪声里；要做结论至少各跑 3~5 次。
-- 主会话消息数一个都没少（都是 9）。分层没有减少交互开销，只是把活分派出去了。
-- 未缓存输入反而 +20% —— 每个子代理开局都要重读一遍约束，这些前缀互相独立、缓存复用不了。
-  这是固定开销：任务越大摊得越薄，任务越小越亏。
-- 这个数字不是完整账：它是主会话的用量，子代理的用量没算进去，
-  而其中规划层走的是更贵的模型。所以分层真实总成本大概率更高。
-
-我最初的两个预判，一对一错：
-
-| 预判 | 结果 |
-|---|---|
-| 分层输出会上升（要写任务卡与判定） | 错了，反而降 7% |
-| 分层未缓存输入会上升（子代理各读约束） | 对了，+20% |
-
-结论：在这个尺度上，分层买到的是"可能的更少返工"，不是"更省 token"。
-它值不值，取决于你的任务会不会第一次就做错——而这个 10 KB 的测试没能测到那一点
-（两个模式都一次就改对了）。
-
-顺带一个更有用的发现：97.2% 的缓存命中率让 33 万 token 实际只值约 4.7 万。
-把提示前缀稳定住、让缓存一直命中，比换模型或加分层都管用。
-
----
-
-## 实测数据：本地档能不能顶替云端 T2
-
-十张机械活卡（重命名 / 补 import / 补 JSDoc / 统一引号 / 转 JSON / 抽日志 /
-字段迁移 / 补错误处理 / 测试骨架 / switch 转查表），同一套卡分别打云端与本地：
-
-| endpoint | 模型 | 通过 | 总耗时 | 输入 | 输出 |
-|---|---|---|---|---|---|
-| cloud | `deepseek-flash` | 10/10 | 13,762 ms | 850 | 510 |
-| cloud | `deepseek-flash` | 9/10 | 8,006 ms | 850 | 510 |
-| local | 本机 12B MoE（`mellum2-instruct-mxfp4_moe`） | 8/10 | 20,111 ms | 1,026 | 591 |
-
-本地的两处失败都是语义错，不是格式错——输出结构完好（该是 JSON 就是 JSON），错在内容：
-
-| 失败卡 | 它输出的 | 问题 |
-|---|---|---|
-| 补 import | `from "fs"` | 应为 `node:fs/promises`（用了旧式裸模块名） |
-| 抽日志 ERROR 行 | `["disk full","disk full","write failed"]` | 抽错内容（该抽 ERROR 行的特定字段） |
-
-### 一处已由独立复测补上的证据
-
-上面那条硬伤 ①（基准打的是原版模型、不是被部署的自建变体）—— 我直接打被部署的 `mellum2-t2-16k` 复测了同一张卡（变量重命名）：
-
-```json
-{"model":"mellum2-t2-16k","stream":false,"options":{"temperature":0},
- "messages":[{"role":"user","content":"把下面这段 JS 里的变量名 user 全部改名为 userName。只输出改好的代码，不要任何解释。…"}]}
-```
-
-输出与期望逐字一致：`userName` 出现 4 次、残留裸 `user` 0 次、
-模板字符串 `` `hello ${userName}` `` 完整保留。耗时 约 1 秒，prompt 76 tok / out 40 tok。
-
-所以"被部署的模型也能做机械活"这一点是成立的（至少在这张卡上）。
-但这是单卡复测，不等于那 10 张卡的 8/10 —— 完整验收仍需按被部署模型重跑一遍。
-
-###  另外两处硬伤仍未消除
-
-1. 同一次记录里还有一个 `0/10` 的幽灵对照：那是 `q4_k_m` 变体，本机根本没装，
-   `raw` 全空、耗时 0 ms。那是"模型缺失"，不是"模型不行"，不能拿来做任何结论。
-2. 云端基线自己就不稳：同一套卡两次跑出 9/10 与 10/10。
-
-所以诚实的说法是：本地档与云端在机械活上大致打平，而不是"低 20%"。
-8/10 与 9~10/10 的差距落在云端自身的波动带里；单次跑分不足以区分两者。
-
-### 本地档真正省的是什么
-
-不是钱。 云端按 token 计费，本地按时间和显存计费——本地跑 20 秒的"钱"是你的电费
-加上显卡被占用 20 秒（期间跑不了别的）。而机械活那点 token（850 in / 510 out）
-按 flash 价格几乎是零头。
-
-它省的是隐私：文件不出机器。这是站得住的卖点；
-把它包装成"省成本"在这个量级上会被数据打脸。
-
-还没有测的、也是最大的未知：`contextWindow: 16384` 在真实机械活输入下的表现。
-上面每张卡的输入只有 ~100 token，而"把 200 行文件整体改名"这种卡可能是几千到上万 token。
-本地档的适用范围很可能被这条边界决定，而不是被跑分决定。
 
 ---
 
@@ -526,6 +181,13 @@ dsh-tiered-collab/
    所以"本地低 20%"这个说法不成立，只能说"大致打平、待复测"。
 6. 本地档的 16K 上下文边界未测。 已知跑分每卡输入仅约 100 token；
    真实机械活输入可能大一到两个数量级。这条边界比跑分更能决定它能不能用。
+
+## 延伸阅读
+
+- [docs/PITFALLS.md](docs/PITFALLS.md) —— 7 条踩坑的完整记录与修法（本仓库最有价值的部分）
+- [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md) —— 两组实测数据的完整推导，以及本地档方案
+- [docs/TOOLS.md](docs/TOOLS.md) —— 验收执行器与文件树快照的用法、可跑示例、亲手验证步骤
+- [orchestrate/RUNBOOK-tiered.md](orchestrate/RUNBOOK-tiered.md) —— 直调四个分层工具的执行手册
 
 ## License
 
